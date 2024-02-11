@@ -60,16 +60,43 @@ def apply_rotary_emb(
     key_real, key_imag = key.float().reshape(key.shape[:-1] + (-1, 2)).unbind(-1)
     # This separates each query/key vector into its odd and even indices (assuming *one-indexing*).
     # query_real contains q_1, q_3, q_5, ... and query_imag contains q_2, q_4, q_6, ...
+    # (batch_size, seqlen, n_local_heads, self.head_dim / 2)
 
     # First, compute the trigonometric values in the second and fourth columns in
     # slide 22 (linked above).
 
+    m = torch.arange(0, seqlen, device=device).float()
+    theta_i = torch.arange(0, head_dim/2).float()
+    theta_vect = torch.pow(theta, -2 * (theta_i-1) / head_dim)
+    # Multiply m and theta to get matrix of shape (seqlen, head_dim/2)
+    m_theta = m.unsqueeze(-1) * theta_vect.unsqueeze(0)
+    # shape is (batch_size, seqlen, n_local_heads, head_dim/2)
+    freqs_cis = reshape_for_broadcast(m_theta, query_real)
+
+    cos_freqs_cis = torch.cos(freqs_cis)
+    sin_freqs_cis = torch.sin(freqs_cis)
+
     # Then, combine these trigonometric values with the tensors query_real, query_imag,
     # key_real, and key_imag.
 
-    raise NotImplementedError
+    # Queries
+    q_odds = query_real * cos_freqs_cis - query_imag * sin_freqs_cis
+    q_evens = query_real * sin_freqs_cis + query_imag * cos_freqs_cis
 
-    query_out = None
-    key_out = None
+    # Keys
+    k_odds = key_real * cos_freqs_cis - key_imag * sin_freqs_cis
+    k_evens = key_real * sin_freqs_cis + key_imag * cos_freqs_cis
+
+    # raise NotImplementedError
+
+    # Concatenate the real and imaginary parts of the query and key tensors
+    query_out = torch.cat([q_odds, q_evens], dim=3)
+    key_out = torch.cat([k_odds, k_evens], dim=3)
+    # Create an index tensor for alternating rows
+    index_tensor = torch.arange(head_dim/2).repeat_interleave(2).long()
+    # Use the index tensor to reorder the query and key tensors
+    query_out = query_out[:, :, :, index_tensor]
+    key_out = key_out[:, :, :, index_tensor]
+
     # Return the rotary position embeddings for the query and key tensors
     return query_out, key_out

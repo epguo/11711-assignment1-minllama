@@ -44,7 +44,10 @@ class RMSNorm(torch.nn.Module):
             torch.Tensor: The normalized tensor.
         """
         # todo
-        raise NotImplementedError
+        # raise NotImplementedError
+
+        RMS = torch.sqrt(torch.mean(torch.square(x), dim=-1, keepdim=True) + self.eps)
+        return x / RMS
 
     def forward(self, x):
         """
@@ -87,14 +90,20 @@ class Attention(nn.Module):
         Jointly compute Scaled Dot Product Attention (see Section 3.2.1 in
         https://arxiv.org/abs/1706.03762 for details). The query, key, and
         value tensors each have shape (bs, n_local_heads, seqlen, head_dim).
-        An optimal implemention will jointly computing attention for multiple
+        An optimal implemention will jointly compute attention for multiple
         heads (n_local_heads of them) at once using matrix/tensor operations.
 
         Make sure to use attention_dropout (self.attn_dropout) on the computed
         attention matrix before applying it to the value tensor.
         '''
         # todo
-        raise NotImplementedError
+        # raise NotImplementedError
+
+        attn_scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        attn_weights = F.softmax(attn_scores, dim=-1)
+        attn_weights = self.attn_dropout(attn_weights)  # attention dropout
+        value = torch.matmul(attn_weights, value)  # apply attention weights to value
+        return value
 
     def forward(
         self,
@@ -178,7 +187,9 @@ class LlamaLayer(nn.Module):
             dropout=config.dropout,
         )
         self.layer_id = layer_id
+        # Layer normalization for attention output
         self.attention_norm = RMSNorm(config.dim, eps=config.layer_norm_eps)
+        # Layer normalization for feed-forward output
         self.ffn_norm = RMSNorm(config.dim, eps=config.layer_norm_eps)
 
     def forward(self, x):
@@ -191,13 +202,35 @@ class LlamaLayer(nn.Module):
         1) layer normalization of the input (via Root Mean Square layer normalization)
         2) self-attention on the layer-normalized input
         3) a residual connection (i.e., add the input to the output of the self-attention)
-        3) layer normalization on the output of the self-attention
-        4) a feed-forward network on the layer-normalized output of the self-attention
-        5) add a residual connection from the unnormalized self-attention output to the
+        4) layer normalization on the output of the self-attention
+        5) a feed-forward network on the layer-normalized output of the self-attention
+        6) add a residual connection from the unnormalized self-attention output to the
            output of the feed-forward network
         '''
         # todo
-        raise NotImplementedError
+        # raise NotImplementedError
+
+        # 1) layer normalization of the input (via Root Mean Square layer normalization)
+        x = self.attention_norm(x)
+
+        # 2) self-attention on the layer-normalized input
+        attn_output = self.attention(x)
+
+        # 3) a residual connection (i.e., add the input to the output of the self-attention)
+        attn_output += x
+
+        # 4) layer normalization on the output of the self-attention
+        attn_output_normalized = self.attention_norm(attn_output)
+
+        # 5) a feed-forward network on the layer-normalized output of the self-attention
+        ffn_output = self.feed_forward(attn_output_normalized)
+
+        # 6) add a residual connection from the unnormalized self-attention output to the
+        #    output of the feed-forward network
+        ffn_output += attn_output
+
+        # 7) layer normalization on the output of the feed-forward network?
+        return self.ffn_norm(ffn_output)
 
 class Llama(LlamaPreTrainedModel):
     def __init__(self, config: LlamaConfig):
@@ -292,7 +325,6 @@ class Llama(LlamaPreTrainedModel):
                 idx_next = None
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
-
 
         return idx
 

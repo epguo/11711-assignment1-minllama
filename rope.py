@@ -71,10 +71,6 @@ def apply_rotary_emb(
     # Multiply m and theta to get matrix of shape (seqlen, head_dim/2)
     m_theta = torch.outer(m, theta_vect)
 
-    # References for freqs_cis calculation:
-    # https://github.com/facebookresearch/llama/blob/main/llama/model.py#L80
-    # https://github.com/facebookresearch/llama/blob/main/llama/model.py#L132
-
     # shape is (batch_size, seqlen, n_local_heads, head_dim/2)
     freqs_cis = reshape_for_broadcast(m_theta, query_real)
 
@@ -94,14 +90,19 @@ def apply_rotary_emb(
 
     # Concatenate the real and imaginary parts of the query and key tensors
 
-    query_out = torch.zeros_like(query)
-    key_out = torch.zeros_like(key)
-    for i in range(query_real.shape[-1]):
-        # Take i-th col of odd, concat with i-th col of even
-        query_out[:, :, :, 2*i] = q_odds[:, :, :, i]
-        query_out[:, :, :, 2*i+1] = q_evens[:, :, :, i]
-        key_out[:, :, :, 2*i] = k_odds[:, :, :, i]
-        key_out[:, :, :, 2*i+1] = k_evens[:, :, :, i]
+    # Reshape to add new dimension for interweaving
+    q_odds_reshaped = q_odds.unsqueeze(-1)
+    q_evens_reshaped = q_evens.unsqueeze(-1)
+    k_odds_reshaped = k_odds.unsqueeze(-1)
+    k_evens_reshaped = k_evens.unsqueeze(-1)
+
+    # Concatenate along last axis
+    query_out = torch.cat([q_odds_reshaped, q_evens_reshaped], dim=q_odds.dim())  
+    key_out = torch.cat([k_odds_reshaped, k_evens_reshaped], dim=q_odds.dim()) 
+
+    # Reshape to final shape
+    query_out = query_out.view(query_out.shape[:-2] + (-1,))
+    key_out = key_out.view(key_out.shape[:-2] + (-1,))
 
     # Return the rotary position embeddings for the query and key tensors
     return query_out, key_out

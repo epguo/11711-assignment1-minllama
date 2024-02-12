@@ -67,9 +67,14 @@ def apply_rotary_emb(
 
     m = torch.arange(0, seqlen, device=device).float()
     theta_i = torch.arange(0, head_dim/2).float()
-    theta_vect = torch.pow(theta, -2 * (theta_i-1) / head_dim)
+    theta_vect = 1 / torch.pow(theta, 2 * theta_i / head_dim)
     # Multiply m and theta to get matrix of shape (seqlen, head_dim/2)
-    m_theta = m.unsqueeze(-1) * theta_vect.unsqueeze(0)
+    m_theta = torch.outer(m, theta_vect)
+
+    # References for freqs_cis calculation:
+    # https://github.com/facebookresearch/llama/blob/main/llama/model.py#L80
+    # https://github.com/facebookresearch/llama/blob/main/llama/model.py#L132
+
     # shape is (batch_size, seqlen, n_local_heads, head_dim/2)
     freqs_cis = reshape_for_broadcast(m_theta, query_real)
 
@@ -87,16 +92,16 @@ def apply_rotary_emb(
     k_odds = key_real * cos_freqs_cis - key_imag * sin_freqs_cis
     k_evens = key_real * sin_freqs_cis + key_imag * cos_freqs_cis
 
-    # raise NotImplementedError
-
     # Concatenate the real and imaginary parts of the query and key tensors
-    query_out = torch.cat([q_odds, q_evens], dim=3)
-    key_out = torch.cat([k_odds, k_evens], dim=3)
-    # Create an index tensor for alternating rows
-    index_tensor = torch.arange(head_dim/2).repeat_interleave(2).long()
-    # Use the index tensor to reorder the query and key tensors
-    query_out = query_out[:, :, :, index_tensor]
-    key_out = key_out[:, :, :, index_tensor]
+
+    query_out = torch.zeros_like(query)
+    key_out = torch.zeros_like(key)
+    for i in range(query_real.shape[-1]):
+        # Take i-th col of odd, concat with i-th col of even
+        query_out[:, :, :, 2*i] = q_odds[:, :, :, i]
+        query_out[:, :, :, 2*i+1] = q_evens[:, :, :, i]
+        key_out[:, :, :, 2*i] = k_odds[:, :, :, i]
+        key_out[:, :, :, 2*i+1] = k_evens[:, :, :, i]
 
     # Return the rotary position embeddings for the query and key tensors
     return query_out, key_out

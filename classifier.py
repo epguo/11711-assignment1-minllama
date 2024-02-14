@@ -61,15 +61,16 @@ class LlamaEmbeddingClassifier(torch.nn.Module):
 		_, hidden_states = self.llama(input_ids)
 
 		# 2) Apply dropout (self.dropout) to the hidden state at training time to mitigate overfitting.
-		hidden_states = self.dropout(hidden_states)
+		hidden_states = self.dropout(hidden_states[:, -1, :])
 
 		# 3) Pass this through the classifier head (self.classifier_head), which will return
 		#    logits (unnormalized probabilities) over all classes.
 
-		# hidden_states[:, -1, :] is final hidden states (after dropout) corresponding to the last token of the input sequence
-		logits = self.classifier_head(hidden_states[:, -1, :])
+		# hidden_states[:, [-1], :] is final hidden state (after dropout) corresponding to last token of input sequence
+		logits = self.classifier_head(hidden_states)
 
 		# 4) Take the log-softmax of the logits and return log-probabilities over all classes.
+		# How to do this over all classes?
 		log_probabilities = F.log_softmax(logits, dim=-1)
 
 		return log_probabilities

@@ -324,7 +324,7 @@ class Llama(LlamaPreTrainedModel):
                 '''
                 idx_next = None
             # append sampled index to the running sequence and continue
-            idx = torch.cat((idx, idx_next), dim=1)
+            idx = torch.cat((idx, idx_next.view(1, -1)), dim=-1)
 
         return idx
 
